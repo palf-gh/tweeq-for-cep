@@ -26,20 +26,49 @@ function cappedRenderSize(width: number, height: number): {width: number; height
 	}
 }
 
+function heightFromAspectRatio(width: number, aspectRatio: string): number | null {
+	if (!aspectRatio || aspectRatio === 'auto') return null
+
+	const parts = aspectRatio.split('/').map(part => parseFloat(part.trim()))
+	if (parts.length !== 2 || parts[0] <= 0 || parts[1] <= 0) return null
+
+	return Math.round(width * (parts[1] / parts[0]))
+}
+
 function readElementSize(element: HTMLElement): {width: number; height: number} {
-	const container = element.parentElement ?? element
-	let width = Math.round(container.clientWidth)
-	let height = Math.round(container.clientHeight)
+	let width = Math.round(element.clientWidth)
+	let height = Math.round(element.clientHeight)
 
 	if (width > 0 && height === 0) {
-		height = width
+		const derived = heightFromAspectRatio(
+			width,
+			getComputedStyle(element).aspectRatio
+		)
+		if (derived) height = derived
 	}
 
-	const aspectRatio = getComputedStyle(container).aspectRatio
-	if (width > 0 && aspectRatio && aspectRatio !== 'auto') {
-		const parts = aspectRatio.split('/').map(part => parseFloat(part.trim()))
-		if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
-			height = Math.round(width * (parts[1] / parts[0]))
+	if (width > 0 && height > 0) {
+		return {width, height}
+	}
+
+	const container = element.parentElement
+	if (!container) {
+		if (width > 0 && height === 0) height = width
+		return {width, height}
+	}
+
+	width = Math.round(container.clientWidth)
+	height = Math.round(container.clientHeight)
+
+	if (width > 0 && height === 0) {
+		const derived = heightFromAspectRatio(
+			width,
+			getComputedStyle(container).aspectRatio
+		)
+		if (derived) {
+			height = derived
+		} else {
+			height = width
 		}
 	}
 
@@ -154,21 +183,19 @@ export function useColorCanvasDraw(canvasRef: Ref<HTMLCanvasElement | null>) {
 		resizeObserver = null
 		stopLayoutPolling()
 
-		const container = target.parentElement ?? target
-
 		if (typeof ResizeObserver !== 'undefined') {
 			resizeObserver = new ResizeObserver(entries => {
 				const entry = lastOf(entries)
 				if (!entry) return
 
-				const {width, height} = entry.contentRect
-				if (!isDrawableSize(width, height)) return
+				const sized = readElementSize(entry.target as HTMLElement)
+				if (!isDrawableSize(sized.width, sized.height)) return
 
-				layoutWidth = Math.round(width)
-				layoutHeight = Math.round(height)
+				layoutWidth = sized.width
+				layoutHeight = sized.height
 				requestRedraw()
 			})
-			resizeObserver.observe(container)
+			resizeObserver.observe(target)
 		} else {
 			startLayoutPolling(target)
 		}
