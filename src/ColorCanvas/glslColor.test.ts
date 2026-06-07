@@ -52,6 +52,13 @@ describe('computePadColor', () => {
 		expect(color.g).toBeCloseTo(0, 2)
 		expect(color.b).toBeCloseTo(0, 2)
 	})
+
+	it('renders white at top-left of an SV pad for a saturated hue', () => {
+		const color = computePadColor([0, 1], [0, 1, 1, 1], [5, 6])
+		expect(color.r).toBeCloseTo(1, 2)
+		expect(color.g).toBeCloseTo(1, 2)
+		expect(color.b).toBeCloseTo(1, 2)
+	})
 })
 
 describe('computeSliderColor', () => {

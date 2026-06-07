@@ -52,6 +52,10 @@ export function glslRgb2hsv(r: number, g: number, b: number): [number, number, n
 	const d = q[0] - Math.min(q[3], q[2])
 	const e = 1.0e-10
 
+	if (d < e) {
+		return [0, 0, q[0]]
+	}
+
 	return [
 		Math.abs(q[1] + (q[3] - q[2]) / (6.0 * d + e)),
 		d / (q[0] + e),
@@ -100,7 +104,7 @@ export function computePadColor(
 		} else {
 			let hsv = glslRgb2hsv(outColor.r, outColor.g, outColor.b)
 
-			if (hsv[1] === 0 || hsv[2] === 0) {
+			if (hsv[1] === 0 || hsv[2] === 0 || hue !== NONE || sat !== NONE) {
 				hsv = [
 					hue === NONE ? hsva[0] : hue,
 					sat === NONE ? hsva[1] : sat,

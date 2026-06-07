@@ -13,6 +13,9 @@ import {
 
 type DrawFn = (ctx: CanvasRenderingContext2D, width: number, height: number) => void
 
+const MIN_CANVAS_SIZE = 32
+const LAYOUT_POLL_FRAMES = 120
+
 const offscreen = document.createElement('canvas')
 let drawChain = Promise.resolve()
 
@@ -25,14 +28,15 @@ function enqueueDraw(task: () => void): void {
 }
 
 function readElementSize(element: HTMLElement): {width: number; height: number} {
-	let width = Math.round(element.offsetWidth)
-	let height = Math.round(element.offsetHeight)
+	const container = element.parentElement ?? element
+	let width = Math.round(container.clientWidth)
+	let height = Math.round(container.clientHeight)
 
 	if (width > 0 && height === 0) {
 		height = width
 	}
 
-	const aspectRatio = getComputedStyle(element).aspectRatio
+	const aspectRatio = getComputedStyle(container).aspectRatio
 	if (width > 0 && aspectRatio && aspectRatio !== 'auto') {
 		const parts = aspectRatio.split('/').map(part => parseFloat(part.trim()))
 		if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
@@ -41,6 +45,10 @@ function readElementSize(element: HTMLElement): {width: number; height: number} 
 	}
 
 	return {width, height}
+}
+
+function isDrawableSize(width: number, height: number): boolean {
+	return width >= MIN_CANVAS_SIZE && height >= MIN_CANVAS_SIZE
 }
 
 function getCanvas2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
@@ -55,6 +63,8 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	let layoutWidth = 0
 	let layoutHeight = 0
 	let resizeFrame = 0
+	let layoutPollFrame = 0
+	let layoutPollCount = 0
 	let disposed = false
 	let element: HTMLImageElement | null = null
 
@@ -74,9 +84,44 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		})
 	}
 
+	function stopLayoutPolling(): void {
+		cancelAnimationFrame(layoutPollFrame)
+		layoutPollFrame = 0
+		layoutPollCount = 0
+	}
+
+	function startLayoutPolling(target: HTMLImageElement): void {
+		if (typeof ResizeObserver !== 'undefined') return
+
+		stopLayoutPolling()
+
+		const tick = () => {
+			if (disposed || !target.isConnected) {
+				stopLayoutPolling()
+				return
+			}
+
+			layoutPollCount += 1
+			if (updateLayoutFromElement(target) && isDrawableSize(layoutWidth, layoutHeight)) {
+				requestRedraw()
+				stopLayoutPolling()
+				return
+			}
+
+			if (layoutPollCount < LAYOUT_POLL_FRAMES) {
+				layoutPollFrame = requestAnimationFrame(tick)
+			}
+		}
+
+		layoutPollFrame = requestAnimationFrame(tick)
+	}
+
 	function observeElement(target: HTMLImageElement): void {
 		resizeObserver?.disconnect()
 		resizeObserver = null
+		stopLayoutPolling()
+
+		const container = target.parentElement ?? target
 
 		if (typeof ResizeObserver !== 'undefined') {
 			resizeObserver = new ResizeObserver(entries => {
@@ -84,17 +129,21 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 				if (!entry) return
 
 				const {width, height} = entry.contentRect
-				if (width < 1 || height < 1) return
+				if (!isDrawableSize(width, height)) return
 
 				layoutWidth = Math.round(width)
 				layoutHeight = Math.round(height)
 				requestRedraw()
 			})
-			resizeObserver.observe(target)
+			resizeObserver.observe(container)
+		} else {
+			startLayoutPolling(target)
 		}
 
 		updateLayoutFromElement(target)
-		if (lastDrawFn) scheduleDraw(lastDrawFn)
+		if (lastDrawFn && isDrawableSize(layoutWidth, layoutHeight)) {
+			scheduleDraw(lastDrawFn)
+		}
 	}
 
 	whenever(
@@ -114,6 +163,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	onBeforeUnmount(() => {
 		disposed = true
 		cancelAnimationFrame(resizeFrame)
+		stopLayoutPolling()
 		resizeObserver?.disconnect()
 		resizeObserver = null
 		lastDrawFn = null
@@ -137,7 +187,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 				const measured = readElementSize(target)
 				const width = layoutWidth || measured.width
 				const height = layoutHeight || measured.height
-				if (!width || !height) return
+				if (!isDrawableSize(width, height)) return
 
 				offscreen.width = width
 				offscreen.height = height
