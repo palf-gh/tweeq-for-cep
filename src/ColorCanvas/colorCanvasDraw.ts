@@ -1,30 +1,29 @@
 import {whenever} from '@vueuse/core'
-import {uniqueId} from 'lodash-es'
 import {onBeforeUnmount, type Ref} from 'vue'
 
 import {lastOf} from '../util'
-import {
-	renderPad,
-	renderSlider,
-	renderWheel,
-	type PadUniforms,
-	type SliderUniforms,
-} from './colorRenderers'
-
-type DrawFn = (ctx: CanvasRenderingContext2D, width: number, height: number) => void
+import type {KeyedDrawFn} from './colorRenderers'
 
 const MIN_CANVAS_SIZE = 32
-const LAYOUT_POLL_FRAMES = 120
+const MAX_RENDER_SIZE = 144
+const LAYOUT_POLL_FRAMES = 60
+const MAX_CACHE_ENTRIES = 24
 
-const offscreen = document.createElement('canvas')
-let drawChain = Promise.resolve()
+const renderCache = new Map<string, HTMLCanvasElement>()
 
-function enqueueDraw(task: () => void): void {
-	drawChain = drawChain
-		.then(() => {
-			task()
-		})
-		.catch(() => {})
+type DrawFn = KeyedDrawFn
+
+function cappedRenderSize(width: number, height: number): {width: number; height: number} {
+	const longest = Math.max(width, height)
+	if (longest <= MAX_RENDER_SIZE) {
+		return {width, height}
+	}
+
+	const scale = MAX_RENDER_SIZE / longest
+	return {
+		width: Math.max(MIN_CANVAS_SIZE, Math.round(width * scale)),
+		height: Math.max(MIN_CANVAS_SIZE, Math.round(height * scale)),
+	}
 }
 
 function readElementSize(element: HTMLElement): {width: number; height: number} {
@@ -56,17 +55,51 @@ function getCanvas2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D
 	return ctx instanceof CanvasRenderingContext2D ? ctx : null
 }
 
-export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
-	let latestWorkId = uniqueId()
+function rememberCachedCanvas(key: string, canvas: HTMLCanvasElement): HTMLCanvasElement {
+	if (renderCache.size >= MAX_CACHE_ENTRIES) {
+		const oldest = renderCache.keys().next().value
+		if (oldest) renderCache.delete(oldest)
+	}
+
+	renderCache.set(key, canvas)
+	return canvas
+}
+
+function getCachedCanvas(
+	cacheKey: string,
+	width: number,
+	height: number,
+	drawFn: DrawFn
+): HTMLCanvasElement {
+	const fullKey = `${cacheKey}@${width}x${height}`
+	const cached = renderCache.get(fullKey)
+	if (cached && cached.width === width && cached.height === height) {
+		return cached
+	}
+
+	const canvas = document.createElement('canvas')
+	canvas.width = width
+	canvas.height = height
+
+	const ctx = getCanvas2dContext(canvas)
+	if (!ctx) return canvas
+
+	drawFn(ctx, width, height)
+	return rememberCachedCanvas(fullKey, canvas)
+}
+
+export function useColorCanvasDraw(canvasRef: Ref<HTMLCanvasElement | null>) {
 	let lastDrawFn: DrawFn | null = null
+	let lastCacheKey = ''
 	let resizeObserver: ResizeObserver | null = null
 	let layoutWidth = 0
 	let layoutHeight = 0
 	let resizeFrame = 0
+	let drawFrame = 0
 	let layoutPollFrame = 0
 	let layoutPollCount = 0
 	let disposed = false
-	let element: HTMLImageElement | null = null
+	let element: HTMLCanvasElement | null = null
 
 	function updateLayoutFromElement(target: HTMLElement): boolean {
 		const {width, height} = readElementSize(target)
@@ -90,7 +123,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		layoutPollCount = 0
 	}
 
-	function startLayoutPolling(target: HTMLImageElement): void {
+	function startLayoutPolling(target: HTMLCanvasElement): void {
 		if (typeof ResizeObserver !== 'undefined') return
 
 		stopLayoutPolling()
@@ -116,7 +149,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		layoutPollFrame = requestAnimationFrame(tick)
 	}
 
-	function observeElement(target: HTMLImageElement): void {
+	function observeElement(target: HTMLCanvasElement): void {
 		resizeObserver?.disconnect()
 		resizeObserver = null
 		stopLayoutPolling()
@@ -147,7 +180,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	}
 
 	whenever(
-		img,
+		canvasRef,
 		nextElement => {
 			if (!nextElement) {
 				element = null
@@ -163,6 +196,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	onBeforeUnmount(() => {
 		disposed = true
 		cancelAnimationFrame(resizeFrame)
+		cancelAnimationFrame(drawFrame)
 		stopLayoutPolling()
 		resizeObserver?.disconnect()
 		resizeObserver = null
@@ -170,63 +204,51 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		element = null
 	})
 
+	function paint(drawFn: DrawFn): void {
+		try {
+			const target = element
+			if (!target || !target.isConnected) return
+
+			const measured = readElementSize(target)
+			const layoutW = layoutWidth || measured.width
+			const layoutH = layoutHeight || measured.height
+			if (!isDrawableSize(layoutW, layoutH)) return
+
+			const {width, height} = cappedRenderSize(layoutW, layoutH)
+			const cached = getCachedCanvas(drawFn.cacheKey, width, height, drawFn)
+			const ctx = getCanvas2dContext(target)
+			if (!ctx) return
+
+			target.width = width
+			target.height = height
+			ctx.drawImage(cached, 0, 0)
+		} catch (error) {
+			// Keep Vue's render tree intact on legacy runtimes (e.g. AE CEP).
+			// eslint-disable-next-line no-console
+			console.error('[ColorCanvas] draw failed:', error)
+		}
+	}
+
 	function scheduleDraw(drawFn: DrawFn): void {
 		if (disposed) return
 
+		const cacheKeyChanged = drawFn.cacheKey !== lastCacheKey
 		lastDrawFn = drawFn
-		const workId = uniqueId()
-		latestWorkId = workId
+		lastCacheKey = drawFn.cacheKey
 
-		enqueueDraw(() => {
-			try {
-				if (disposed || latestWorkId !== workId) return
+		if (cacheKeyChanged) {
+			cancelAnimationFrame(drawFrame)
+			drawFrame = 0
+		}
 
-				const target = element
-				if (!target || !target.isConnected) return
+		if (drawFrame) return
 
-				const measured = readElementSize(target)
-				const width = layoutWidth || measured.width
-				const height = layoutHeight || measured.height
-				if (!isDrawableSize(width, height)) return
-
-				offscreen.width = width
-				offscreen.height = height
-
-				const ctx = getCanvas2dContext(offscreen)
-				if (!ctx) return
-
-				drawFn(ctx, width, height)
-
-				if (disposed || latestWorkId !== workId || !target.isConnected) {
-					return
-				}
-
-				target.src = offscreen.toDataURL()
-			} catch (error) {
-				// Keep Vue's render tree intact on legacy runtimes (e.g. AE CEP).
-				// eslint-disable-next-line no-console
-				console.error('[ColorCanvas] draw failed:', error)
-			}
+		drawFrame = requestAnimationFrame(() => {
+			drawFrame = 0
+			if (!lastDrawFn) return
+			paint(lastDrawFn)
 		})
 	}
 
 	return scheduleDraw
-}
-
-export function createPadDraw(uniforms: PadUniforms): DrawFn {
-	return (ctx, width, height) => {
-		renderPad(ctx, width, height, uniforms.hsva, uniforms.axes)
-	}
-}
-
-export function createSliderDraw(uniforms: SliderUniforms): DrawFn {
-	return (ctx, width, height) => {
-		renderSlider(ctx, width, height, uniforms.hsva, uniforms.axis, uniforms.offset ?? 0)
-	}
-}
-
-export function createWheelDraw(): DrawFn {
-	return (ctx, width, height) => {
-		renderWheel(ctx, width, height)
-	}
 }

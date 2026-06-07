@@ -1,13 +1,16 @@
 <script lang="ts" setup>
-import {useTemplateRef, watch} from 'vue'
+import {computed, useTemplateRef, watch} from 'vue'
 
+import {useColorCanvasDraw} from './colorCanvasDraw'
 import {
+	buildRenderCacheKey,
 	createPadDraw,
 	createSliderDraw,
 	createWheelDraw,
-	useColorCanvasDraw,
-} from './colorCanvasDraw'
-import type {PadUniforms, SliderUniforms, WheelUniforms} from './colorRenderers'
+	type PadUniforms,
+	type SliderUniforms,
+	type WheelUniforms,
+} from './colorRenderers'
 
 export type ColorCanvasType = 'pad' | 'slider' | 'wheel'
 
@@ -18,26 +21,36 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const $img = useTemplateRef('$img')
-const scheduleDraw = useColorCanvasDraw($img)
+const $canvas = useTemplateRef('$canvas')
+const scheduleDraw = useColorCanvasDraw($canvas)
+
+const renderCacheKey = computed(() =>
+	buildRenderCacheKey(props.type, props.uniforms)
+)
 
 watch(
-	() => [props.type, props.uniforms] as const,
-	([type, uniforms]) => {
-		if (type === 'pad' && uniforms) {
-			scheduleDraw(createPadDraw(uniforms as PadUniforms))
-		} else if (type === 'slider' && uniforms) {
-			scheduleDraw(createSliderDraw(uniforms as SliderUniforms))
-		} else if (type === 'wheel') {
+	renderCacheKey,
+	() => {
+		if (props.type === 'pad' && props.uniforms) {
+			scheduleDraw(createPadDraw(props.uniforms as PadUniforms))
+			return
+		}
+
+		if (props.type === 'slider' && props.uniforms) {
+			scheduleDraw(createSliderDraw(props.uniforms as SliderUniforms))
+			return
+		}
+
+		if (props.type === 'wheel') {
 			scheduleDraw(createWheelDraw())
 		}
 	},
-	{immediate: true, deep: true, flush: 'post'}
+	{immediate: true}
 )
 </script>
 
 <template>
-	<img ref="$img" class="ColorCanvas" alt="" />
+	<canvas ref="$canvas" class="ColorCanvas" />
 </template>
 
 <style lang="stylus" scoped>
@@ -45,7 +58,6 @@ watch(
 .ColorCanvas
 	pointer-events none
 	display block
-	max-width 100%
-	max-height 100%
-	object-fit fill
+	width 100%
+	height 100%
 </style>

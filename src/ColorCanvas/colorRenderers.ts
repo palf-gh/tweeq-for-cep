@@ -2,6 +2,7 @@ import {
 	computePadColor,
 	computeSliderColor,
 	computeWheelColor,
+	glslHsv2rgb,
 	pixelToUv,
 } from './glslColor'
 
@@ -22,7 +23,14 @@ export interface WheelUniforms {
 	hsva: HSVAUniform
 }
 
+export type ColorCanvasType = 'pad' | 'slider' | 'wheel'
+
 type RGBA = {r: number; g: number; b: number; a: number}
+
+export interface KeyedDrawFn {
+	(ctx: CanvasRenderingContext2D, width: number, height: number): void
+	cacheKey: string
+}
 
 function putPixel(
 	data: Uint8ClampedArray,
@@ -39,6 +47,67 @@ function clamp01(x: number): number {
 	return Math.min(1, Math.max(0, x))
 }
 
+function isSVPad(axes: readonly [number, number]): boolean {
+	return axes[0] === 5 && axes[1] === 6
+}
+
+export function buildRenderCacheKey(
+	type: ColorCanvasType,
+	uniforms?: PadUniforms | SliderUniforms | WheelUniforms
+): string {
+	if (type === 'wheel') return 'wheel'
+
+	if (!uniforms) return `${type}:empty`
+
+	if (type === 'pad') {
+		const pad = uniforms as PadUniforms
+		if (isSVPad(pad.axes)) {
+			return `pad:sv:${pad.hsva[0].toFixed(5)}`
+		}
+
+		return `pad:${pad.hsva.join(',')}:${pad.axes.join(',')}`
+	}
+
+	const slider = uniforms as SliderUniforms
+	const {hsva, axis, offset = 0} = slider
+
+	if (axis === 4) {
+		return `slider:h:${offset.toFixed(5)}`
+	}
+
+	if (axis === 5) {
+		return `slider:s:${hsva[0].toFixed(5)}:${hsva[2].toFixed(5)}:${offset.toFixed(5)}`
+	}
+
+	if (axis === 6) {
+		return `slider:v:${hsva[0].toFixed(5)}:${hsva[1].toFixed(5)}:${offset.toFixed(5)}`
+	}
+
+	return `slider:${axis}:${hsva.join(',')}:${offset.toFixed(5)}`
+}
+
+function renderSVPad(
+	data: Uint8ClampedArray,
+	width: number,
+	height: number,
+	hue: number
+): void {
+	for (let py = 0; py < height; py++) {
+		const v = height > 1 ? 1 - py / (height - 1) : 1
+		const row = py * width * 4
+
+		for (let px = 0; px < width; px++) {
+			const u = width > 1 ? px / (width - 1) : 0
+			const [r, g, b] = glslHsv2rgb(hue, u, v)
+			const index = row + px * 4
+			data[index] = Math.round(r * 255)
+			data[index + 1] = Math.round(g * 255)
+			data[index + 2] = Math.round(b * 255)
+			data[index + 3] = 255
+		}
+	}
+}
+
 export function renderPad(
 	ctx: CanvasRenderingContext2D,
 	width: number,
@@ -48,6 +117,12 @@ export function renderPad(
 ): void {
 	const imageData = ctx.createImageData(width, height)
 	const {data} = imageData
+
+	if (isSVPad(axes)) {
+		renderSVPad(data, width, height, hsva[0])
+		ctx.putImageData(imageData, 0, 0)
+		return
+	}
 
 	for (let py = 0; py < height; py++) {
 		for (let px = 0; px < width; px++) {
@@ -71,11 +146,13 @@ export function renderSlider(
 	const imageData = ctx.createImageData(width, height)
 	const {data} = imageData
 
-	for (let py = 0; py < height; py++) {
-		for (let px = 0; px < width; px++) {
-			const [u] = pixelToUv(px, py, width, height)
-			const color = computeSliderColor(u + offset, hsva, axis)
-			putPixel(data, (py * width + px) * 4, color)
+	for (let px = 0; px < width; px++) {
+		const u = width > 1 ? px / (width - 1) : 0
+		const color = computeSliderColor(u + offset, hsva, axis)
+		const base = px * 4
+
+		for (let py = 0; py < height; py++) {
+			putPixel(data, py * width * 4 + base, color)
 		}
 	}
 
@@ -99,4 +176,35 @@ export function renderWheel(
 	}
 
 	ctx.putImageData(imageData, 0, 0)
+}
+
+export function createPadDraw(uniforms: PadUniforms): KeyedDrawFn {
+	const draw: KeyedDrawFn = (ctx, width, height) => {
+		renderPad(ctx, width, height, uniforms.hsva, uniforms.axes)
+	}
+	draw.cacheKey = buildRenderCacheKey('pad', uniforms)
+	return draw
+}
+
+export function createSliderDraw(uniforms: SliderUniforms): KeyedDrawFn {
+	const draw: KeyedDrawFn = (ctx, width, height) => {
+		renderSlider(
+			ctx,
+			width,
+			height,
+			uniforms.hsva,
+			uniforms.axis,
+			uniforms.offset ?? 0
+		)
+	}
+	draw.cacheKey = buildRenderCacheKey('slider', uniforms)
+	return draw
+}
+
+export function createWheelDraw(): KeyedDrawFn {
+	const draw: KeyedDrawFn = (ctx, width, height) => {
+		renderWheel(ctx, width, height)
+	}
+	draw.cacheKey = buildRenderCacheKey('wheel')
+	return draw
 }

@@ -59,6 +59,27 @@ describe('computePadColor', () => {
 		expect(color.g).toBeCloseTo(1, 2)
 		expect(color.b).toBeCloseTo(1, 2)
 	})
+
+	it('matches the SV pad fast path for multiple samples', () => {
+		const hue = 0.12
+		const hsva = [hue, 0.42, 0.67, 1] as const
+		const samples: Array<[number, number]> = [
+			[0, 0],
+			[0, 1],
+			[1, 0],
+			[1, 1],
+			[0.35, 0.8],
+		]
+
+		for (const uv of samples) {
+			const [u, v] = uv
+			const expected = computePadColor(uv, hsva, [5, 6])
+			const [r, g, b] = glslHsv2rgb(hue, u, v)
+			expect(r).toBeCloseTo(expected.r, 3)
+			expect(g).toBeCloseTo(expected.g, 3)
+			expect(b).toBeCloseTo(expected.b, 3)
+		}
+	})
 })
 
 describe('computeSliderColor', () => {
