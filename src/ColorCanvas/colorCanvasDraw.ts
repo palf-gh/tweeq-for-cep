@@ -4,7 +4,8 @@ import {onBeforeUnmount, type Ref} from 'vue'
 import {lastOf} from '../util'
 import type {KeyedDrawFn} from './colorRenderers'
 
-const MIN_CANVAS_SIZE = 32
+const MIN_RENDER_DIMENSION = 4
+const MIN_DRAWABLE_LONG_SIDE = 24
 const MAX_RENDER_SIZE = 144
 const LAYOUT_POLL_FRAMES = 60
 const MAX_CACHE_ENTRIES = 24
@@ -16,13 +17,16 @@ type DrawFn = KeyedDrawFn
 function cappedRenderSize(width: number, height: number): {width: number; height: number} {
 	const longest = Math.max(width, height)
 	if (longest <= MAX_RENDER_SIZE) {
-		return {width, height}
+		return {
+			width: Math.max(MIN_RENDER_DIMENSION, width),
+			height: Math.max(MIN_RENDER_DIMENSION, height),
+		}
 	}
 
 	const scale = MAX_RENDER_SIZE / longest
 	return {
-		width: Math.max(MIN_CANVAS_SIZE, Math.round(width * scale)),
-		height: Math.max(MIN_CANVAS_SIZE, Math.round(height * scale)),
+		width: Math.max(MIN_RENDER_DIMENSION, Math.round(width * scale)),
+		height: Math.max(MIN_RENDER_DIMENSION, Math.round(height * scale)),
 	}
 }
 
@@ -36,15 +40,28 @@ function heightFromAspectRatio(width: number, aspectRatio: string): number | nul
 }
 
 function readElementSize(element: HTMLElement): {width: number; height: number} {
+	const computed = getComputedStyle(element)
 	let width = Math.round(element.clientWidth)
 	let height = Math.round(element.clientHeight)
 
 	if (width > 0 && height === 0) {
-		const derived = heightFromAspectRatio(
-			width,
-			getComputedStyle(element).aspectRatio
-		)
+		const derived = heightFromAspectRatio(width, computed.aspectRatio)
 		if (derived) height = derived
+	}
+
+	if (width === 0 && height > 0) {
+		const derived = heightFromAspectRatio(height, computed.aspectRatio)
+		if (derived) width = derived
+	}
+
+	if (width > 0 && height === 0) {
+		const parsedHeight = parseFloat(computed.height)
+		if (parsedHeight > 0) height = Math.round(parsedHeight)
+	}
+
+	if (width === 0 && height > 0) {
+		const parsedWidth = parseFloat(computed.width)
+		if (parsedWidth > 0) width = Math.round(parsedWidth)
 	}
 
 	if (width > 0 && height > 0) {
@@ -76,7 +93,9 @@ function readElementSize(element: HTMLElement): {width: number; height: number} 
 }
 
 function isDrawableSize(width: number, height: number): boolean {
-	return width >= MIN_CANVAS_SIZE && height >= MIN_CANVAS_SIZE
+	const longSide = Math.max(width, height)
+	const shortSide = Math.min(width, height)
+	return shortSide >= MIN_RENDER_DIMENSION && longSide >= MIN_DRAWABLE_LONG_SIDE
 }
 
 function getCanvas2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
