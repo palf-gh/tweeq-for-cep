@@ -101,7 +101,7 @@ const {dragging: tweaking} = useDrag($input, {
 		if (!target.classList.contains('digit')) {
 			$input.value!.select()
 		} else {
-			const digitsInOrder = digits.value!.toReversed()
+			const digitsInOrder = [...digits.value!].reverse()
 			const len = digitsInOrder.length
 			const i = len - tweakScale.value - 1
 			const str = digitsInOrder.slice(0, i).join(':')

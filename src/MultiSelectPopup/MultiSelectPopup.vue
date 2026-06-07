@@ -5,6 +5,7 @@ import {computed, onMounted, toRef, useTemplateRef, watchEffect} from 'vue'
 
 import {Icon} from '../Icon'
 import {MultiSelectType, useMultiSelectStore} from '../stores/multiSelect'
+import {setPopoverOpen, supportsPopoverApi} from '../util/popover'
 import MultiSelectButton from './MultiSelectButton.vue'
 import MultiSelectPad from './MultiSelectPad.vue'
 
@@ -93,8 +94,10 @@ const visible = computed(() => {
 	return true
 })
 
+const popoverApiSupported = supportsPopoverApi()
+
 watchEffect(() => {
-	$root.value?.togglePopover(visible.value)
+	setPopoverOpen($root.value, visible.value)
 })
 </script>
 
@@ -104,7 +107,7 @@ watchEffect(() => {
 		:class="{visible}"
 		class="TqMultiSelectPopup"
 		:style="floatingStyles"
-		popover="manual"
+		:popover="popoverApiSupported ? 'manual' : undefined"
 	>
 		<Icon class="tune-icon" icon="lsicon:control-filled" />
 		<div class="actions">

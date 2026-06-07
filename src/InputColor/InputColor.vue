@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {useElementSize} from '@vueuse/core'
+import {useElementSize, useFocusWithin} from '@vueuse/core'
 import chroma from 'chroma-js'
 import {computed, ref, useTemplateRef} from 'vue'
 
@@ -20,6 +20,16 @@ const theme = useThemeStore()
 
 const $root = useTemplateRef('$root')
 const {width} = useElementSize($root)
+const {focused: focusWithin} = useFocusWithin($root)
+
+function handleBlur() {
+	// Defer so focus can move into the popover without firing blur/commit.
+	window.setTimeout(() => {
+		if (!focusWithin.value) {
+			emit('blur')
+		}
+	}, 0)
+}
 
 const showColorCode = computed(() => width.value > theme.inputHeight * 3.5)
 
@@ -61,7 +71,7 @@ function onUpdateAlpha(value: number) {
 			:class="{'only-pad': !showColorCode}"
 			:inlinePosition="showColorCode ? 'start' : undefined"
 			@focus="emit('focus')"
-			@blur="emit('blur')"
+			@blur="handleBlur"
 			@confirm="emit('confirm')"
 		/>
 		<InputString
@@ -74,7 +84,7 @@ function onUpdateAlpha(value: number) {
 			:inlinePosition="props.alpha ? 'middle' : 'end'"
 			@update:modelValue="onInputOpaqueColor"
 			@focus="emit('focus')"
-			@blur="emit('blur')"
+			@blur="handleBlur"
 			@confirm="emit('confirm')"
 		/>
 		<InputNumber

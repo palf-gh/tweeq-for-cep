@@ -2,6 +2,8 @@
 import {useEventListener} from '@vueuse/core'
 import {useTemplateRef, watchEffect} from 'vue'
 
+import {setPopoverOpen, supportsPopoverApi} from '../util/popover'
+
 defineSlots<{
 	default: void
 }>()
@@ -21,12 +23,15 @@ const emit = defineEmits<{
 }>()
 
 const $root = useTemplateRef('$root')
+const popoverApiSupported = supportsPopoverApi()
 
-useEventListener($root, 'toggle', (e: ToggleEvent) => {
-	if (e.newState !== 'open') {
-		close()
-	}
-})
+if (popoverApiSupported) {
+	useEventListener($root, 'toggle', (e: ToggleEvent) => {
+		if (e.newState !== 'open') {
+			close()
+		}
+	})
+}
 
 useEventListener('keydown', e => {
 	if (e.key === 'Escape' && props.open) {
@@ -40,12 +45,16 @@ function close() {
 }
 
 watchEffect(() => {
-	$root.value?.togglePopover(props.open)
+	setPopoverOpen($root.value, props.open)
 })
 </script>
 
 <template>
-	<div ref="$root" class="TqPaneModal" popover="auto">
+	<div
+		ref="$root"
+		class="TqPaneModal"
+		:popover="popoverApiSupported ? 'auto' : undefined"
+	>
 		<slot />
 	</div>
 </template>

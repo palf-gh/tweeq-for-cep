@@ -38,27 +38,27 @@ export function replaceTimecodeWithFrames(
 	frameRate: number
 ): string {
 	// Comma-separated timecode
-	expr = expr.replaceAll(/([0-9+\-.]+:)+[0-9+\-.]+/gi, (match: string) => {
+	expr = expr.replace(/([0-9+\-.]+:)+[0-9+\-.]+/gi, (match: string) => {
 		return parseTimecode(match, 24)?.toString() ?? '0'
 	})
 
 	// Frames
-	expr = expr.replaceAll(/[0-9+\-.]+f(rames?)?/gi, (match: string) => {
+	expr = expr.replace(/[0-9+\-.]+f(rames?)?/gi, (match: string) => {
 		return parseTimecode(match, frameRate)?.toString() ?? '0'
 	})
 
 	// Seconds
-	expr = expr.replaceAll(/[0-9+\-.]+s(ec(ond)?s?)?/gi, (match: string) => {
+	expr = expr.replace(/[0-9+\-.]+s(ec(ond)?s?)?/gi, (match: string) => {
 		return parseTimecode(match, frameRate)?.toString() ?? '0'
 	})
 
 	// Minutes
-	expr = expr.replaceAll(/[0-9+\-.]+m(in(ute)?s?)?/gi, (match: string) => {
+	expr = expr.replace(/[0-9+\-.]+m(in(ute)?s?)?/gi, (match: string) => {
 		return parseTimecode(match, frameRate)?.toString() ?? '0'
 	})
 
 	// Hours
-	expr = expr.replaceAll(/[0-9+\-.]+h((ou)?r)?s?/gi, (match: string) => {
+	expr = expr.replace(/[0-9+\-.]+h((ou)?r)?s?/gi, (match: string) => {
 		return parseTimecode(match, frameRate)?.toString() ?? '0'
 	})
 

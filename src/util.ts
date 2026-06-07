@@ -56,3 +56,7 @@ export function toPercent(value: number): string {
 export function nodeContains(parent: Node, child: Node) {
 	return parent === child || parent.contains(child)
 }
+
+export function lastOf<T>(items: readonly T[]): T | undefined {
+	return items.length > 0 ? items[items.length - 1] : undefined
+}

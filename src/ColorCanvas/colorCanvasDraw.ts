@@ -2,6 +2,7 @@ import {whenever} from '@vueuse/core'
 import {uniqueId} from 'lodash-es'
 import {onBeforeUnmount, type Ref} from 'vue'
 
+import {lastOf} from '../util'
 import {
 	renderPad,
 	renderSlider,
@@ -15,8 +16,12 @@ type DrawFn = (ctx: CanvasRenderingContext2D, width: number, height: number) => 
 const offscreen = document.createElement('canvas')
 let drawChain = Promise.resolve()
 
-function enqueueDraw(task: () => Promise<void>): void {
-	drawChain = drawChain.then(task).catch(() => {})
+function enqueueDraw(task: () => void): void {
+	drawChain = drawChain
+		.then(() => {
+			task()
+		})
+		.catch(() => {})
 }
 
 function readElementSize(element: HTMLElement): {width: number; height: number} {
@@ -38,6 +43,11 @@ function readElementSize(element: HTMLElement): {width: number; height: number} 
 	return {width, height}
 }
 
+function getCanvas2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+	const ctx = canvas.getContext('2d')
+	return ctx instanceof CanvasRenderingContext2D ? ctx : null
+}
+
 export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	let latestWorkId = uniqueId()
 	let lastDrawFn: DrawFn | null = null
@@ -46,25 +56,31 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 	let layoutHeight = 0
 	let resizeFrame = 0
 	let disposed = false
+	let element: HTMLImageElement | null = null
 
-	const {promise: waitTillMounted, resolve} = (
-		Promise as typeof Promise & {
-			withResolvers: <T>() => {
-				promise: Promise<T>
-				resolve: (value: T) => void
-			}
-		}
-	).withResolvers<HTMLImageElement>()
+	function updateLayoutFromElement(target: HTMLElement): boolean {
+		const {width, height} = readElementSize(target)
+		if (!width || !height) return false
 
-	whenever(
-		img,
-		element => {
-			if (!element) return
-			resolve(element)
+		layoutWidth = width
+		layoutHeight = height
+		return true
+	}
 
-			resizeObserver?.disconnect()
+	function requestRedraw(): void {
+		cancelAnimationFrame(resizeFrame)
+		resizeFrame = requestAnimationFrame(() => {
+			if (lastDrawFn) scheduleDraw(lastDrawFn)
+		})
+	}
+
+	function observeElement(target: HTMLImageElement): void {
+		resizeObserver?.disconnect()
+		resizeObserver = null
+
+		if (typeof ResizeObserver !== 'undefined') {
 			resizeObserver = new ResizeObserver(entries => {
-				const entry = entries.at(-1)
+				const entry = lastOf(entries)
 				if (!entry) return
 
 				const {width, height} = entry.contentRect
@@ -72,13 +88,25 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 
 				layoutWidth = Math.round(width)
 				layoutHeight = Math.round(height)
-
-				cancelAnimationFrame(resizeFrame)
-				resizeFrame = requestAnimationFrame(() => {
-					if (lastDrawFn) scheduleDraw(lastDrawFn)
-				})
+				requestRedraw()
 			})
-			resizeObserver.observe(element)
+			resizeObserver.observe(target)
+		}
+
+		updateLayoutFromElement(target)
+		if (lastDrawFn) scheduleDraw(lastDrawFn)
+	}
+
+	whenever(
+		img,
+		nextElement => {
+			if (!nextElement) {
+				element = null
+				return
+			}
+
+			element = nextElement
+			observeElement(nextElement)
 		},
 		{immediate: true, flush: 'sync'}
 	)
@@ -89,6 +117,7 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		resizeObserver?.disconnect()
 		resizeObserver = null
 		lastDrawFn = null
+		element = null
 	})
 
 	function scheduleDraw(drawFn: DrawFn): void {
@@ -98,27 +127,36 @@ export function useColorCanvasDraw(img: Ref<HTMLImageElement | null>) {
 		const workId = uniqueId()
 		latestWorkId = workId
 
-		enqueueDraw(async () => {
-			if (disposed || latestWorkId !== workId) return
+		enqueueDraw(() => {
+			try {
+				if (disposed || latestWorkId !== workId) return
 
-			const element = await waitTillMounted
-			if (disposed || !element.isConnected) return
+				const target = element
+				if (!target || !target.isConnected) return
 
-			const measured = readElementSize(element)
-			const width = layoutWidth || measured.width
-			const height = layoutHeight || measured.height
-			if (!width || !height) return
+				const measured = readElementSize(target)
+				const width = layoutWidth || measured.width
+				const height = layoutHeight || measured.height
+				if (!width || !height) return
 
-			offscreen.width = width
-			offscreen.height = height
+				offscreen.width = width
+				offscreen.height = height
 
-			const ctx = offscreen.getContext('2d', {alpha: true})
-			if (!ctx) return
+				const ctx = getCanvas2dContext(offscreen)
+				if (!ctx) return
 
-			drawFn(ctx, width, height)
+				drawFn(ctx, width, height)
 
-			if (disposed || !element.isConnected) return
-			element.src = offscreen.toDataURL()
+				if (disposed || latestWorkId !== workId || !target.isConnected) {
+					return
+				}
+
+				target.src = offscreen.toDataURL()
+			} catch (error) {
+				// Keep Vue's render tree intact on legacy runtimes (e.g. AE CEP).
+				// eslint-disable-next-line no-console
+				console.error('[ColorCanvas] draw failed:', error)
+			}
 		})
 	}
 

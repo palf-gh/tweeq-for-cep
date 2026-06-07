@@ -60,7 +60,8 @@ export const useMultiSelectStore = defineStore('multiSelect', () => {
 	)
 
 	const focusedElement = computed<HTMLElement | null>(() => {
-		const id = [...selectedIds.values()].at(-1)
+		const ids = [...selectedIds.values()]
+		const id = ids[ids.length - 1]
 
 		if (!id) return null
 

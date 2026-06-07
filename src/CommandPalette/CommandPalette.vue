@@ -10,6 +10,12 @@ import {type ActionItemOptions, useActionsStore} from '../stores/actions'
 import {useAppConfigStore} from '../stores/appConfig'
 import {useBndr} from '../use/useBndr'
 import {unsignedMod} from '../util'
+import {
+	hidePopover,
+	setPopoverOpen,
+	supportsPopoverApi,
+	togglePopover as togglePopoverElement,
+} from '../util/popover'
 
 const actions = useActionsStore()
 
@@ -24,10 +30,22 @@ const performedActionsHistory = appConfig.ref<string[]>(
 )
 
 const open = ref(false)
+const popoverApiSupported = supportsPopoverApi()
 
-useEventListener($popover, 'toggle', (e: ToggleEvent) => {
-	open.value = e.newState === 'open'
-})
+if (popoverApiSupported) {
+	useEventListener($popover, 'toggle', (e: ToggleEvent) => {
+		open.value = e.newState === 'open'
+	})
+}
+
+watch(
+	() => [$popover.value, open.value] as const,
+	([popover, isOpen]) => {
+		if (!popoverApiSupported) {
+			setPopoverOpen(popover, isOpen)
+		}
+	}
+)
 
 watch(
 	open,
@@ -65,13 +83,23 @@ watch(filteredActions, () => {
 useBndr($popover, $popover => {
 	Bndr.keyboard()
 		.hotkey('command+p', {preventDefault: true, capture: true})
-		.on(() => $popover instanceof HTMLElement && $popover.togglePopover())
+		.on(() => {
+			if (popoverApiSupported) {
+				togglePopoverElement($popover instanceof HTMLElement ? $popover : null)
+			} else {
+				open.value = !open.value
+			}
+		})
 })
 
 function onKeydown(e: KeyboardEvent) {
 	if (e.key === 'p' && e.metaKey) {
 		e.preventDefault()
-		$popover.value?.hidePopover()
+		if (popoverApiSupported) {
+			hidePopover($popover.value)
+		} else {
+			open.value = false
+		}
 	}
 
 	if (selectedAction.value && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -94,13 +122,21 @@ function perform(action: ActionItemOptions) {
 		...new Set([action.id, ...performedActionsHistory.value]),
 	].slice(0, 10)
 
-	$popover.value?.hidePopover()
+	if (popoverApiSupported) {
+		hidePopover($popover.value)
+	} else {
+		open.value = false
+	}
 	action.perform()
 }
 </script>
 
 <template>
-	<div ref="$popover" class="TqCommandPalette" popover>
+	<div
+		ref="$popover"
+		class="TqCommandPalette"
+		:popover="popoverApiSupported ? '' : undefined"
+	>
 		<div class="searchContainer">
 			<Icon class="search-icon" icon="material-symbols:search-rounded" />
 			<input
