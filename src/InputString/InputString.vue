@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {computed, nextTick, ref, useTemplateRef, watch} from 'vue'
+import {computed, nextTick, ref, toRef, useTemplateRef, watch} from 'vue'
 
 import {InputTextBase} from '../InputTextBase'
 import {useMultiSelectStore} from '../stores/multiSelect'
@@ -18,7 +18,7 @@ const emit = defineEmits<InputEmits>()
 
 const local = ref(model.value)
 const display = ref(model.value)
-const {validLocal, validateResult} = useValidator(local, props.validator)
+const {validLocal, validateResult} = useValidator(local, toRef(props, 'validator'))
 
 const $input = useTemplateRef('$input')
 const focused = ref(false)

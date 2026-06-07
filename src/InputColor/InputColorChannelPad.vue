@@ -2,10 +2,9 @@
 import {vec2} from 'linearly'
 import {computed, useTemplateRef} from 'vue'
 
-import {GlslCanvas} from '../GlslCanvas'
+import {ColorCanvas, type PadUniforms} from '../ColorCanvas'
 import {useDrag} from '../use/useDrag'
 import {toPercent} from '../util'
-import FragmentString from './pad.frag'
 import {type ColorChannel, colorChannelToIndex, HSVA} from './types'
 import {
 	getHSVAChannel,
@@ -75,11 +74,11 @@ const tweakingInside = computed(() => {
 	)
 })
 
-const uniforms = computed(() => {
+const uniforms = computed<PadUniforms>(() => {
 	const {h, s, v, a} = props.modelValue
 	return {
 		hsva: [h, s, v, a],
-		axes: props.axes.map(colorChannelToIndex),
+		axes: props.axes.map(colorChannelToIndex) as [number, number],
 	}
 })
 
@@ -101,11 +100,7 @@ const circleStyle = computed(() => {
 		class="TqInputColorChannelPad"
 		:style="{cursor: tweakingInside ? 'none' : undefined}"
 	>
-		<GlslCanvas
-			class="canvas"
-			:fragmentString="FragmentString"
-			:uniforms="uniforms"
-		/>
+		<ColorCanvas class="canvas" type="pad" :uniforms="uniforms" />
 		<div
 			class="circle"
 			:class="{tweaking: sliderTweaking}"

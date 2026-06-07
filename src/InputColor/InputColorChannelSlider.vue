@@ -3,10 +3,9 @@ import {Rect} from '@baku89/pave'
 import {scalar} from 'linearly'
 import {computed, useTemplateRef} from 'vue'
 
-import {GlslCanvas} from '../GlslCanvas'
+import {ColorCanvas, type SliderUniforms} from '../ColorCanvas'
 import {useDrag} from '../use/useDrag'
 import {toPercent} from '../util'
-import SliderFragmentString from './slider.frag'
 import {type ColorChannel, colorChannelToIndex, type HSVA} from './types'
 import {
 	getHSVAChannel,
@@ -71,7 +70,7 @@ const tweakingInside = computed(() => {
 	return sliderTweaking.value && Rect.containsPoint(bound, xy.value)
 })
 
-const uniforms = computed(() => {
+const uniforms = computed<SliderUniforms>(() => {
 	const {a, h, s, v} = props.modelValue
 	return {
 		hsva: [h, s, v, a],
@@ -96,11 +95,7 @@ const circleStyle = computed(() => {
 		class="TqInputColorChannelSlider"
 		:style="{cursor: tweakingInside ? 'none' : undefined}"
 	>
-		<GlslCanvas
-			class="canvas"
-			:fragmentString="SliderFragmentString"
-			:uniforms="uniforms"
-		/>
+		<ColorCanvas class="canvas" type="slider" :uniforms="uniforms" />
 		<button
 			class="circle"
 			:class="{tweaking: sliderTweaking}"

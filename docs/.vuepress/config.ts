@@ -1,7 +1,6 @@
 import {viteBundler} from '@vuepress/bundler-vite'
 import {defaultTheme} from '@vuepress/theme-default'
 import {fileURLToPath} from 'url'
-import glsl from 'vite-plugin-glsl'
 import {defineUserConfig} from 'vuepress'
 
 export default defineUserConfig({
@@ -65,7 +64,6 @@ export default defineUserConfig({
 	},
 	bundler: viteBundler({
 		viteOptions: {
-			plugins: [glsl() as any],
 			build: {
 				ssr: false,
 			},

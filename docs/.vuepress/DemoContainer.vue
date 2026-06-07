@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import * as Tq from 'tweeq'
-import {ref} from 'vue'
+import {ref, watch} from 'vue'
+import {useRoute} from 'vue-router'
 
 withDefaults(
 	defineProps<{
@@ -16,10 +17,18 @@ defineSlots<{
 }>()
 
 const isFullscreen = ref(false)
+const route = useRoute()
 
 function fullScreen() {
 	isFullscreen.value = !isFullscreen.value
 }
+
+watch(
+	() => route.path,
+	() => {
+		isFullscreen.value = false
+	}
+)
 </script>
 
 <template>

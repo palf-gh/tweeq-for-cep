@@ -81,7 +81,6 @@ function onUpdateAlpha(value: number) {
 			v-if="props.alpha && showColorCode"
 			class="alpha"
 			:modelValue="alpha"
-			:validator="V.colorCode"
 			suffix="%"
 			:min="0"
 			:max="100"

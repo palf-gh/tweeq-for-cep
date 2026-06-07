@@ -38,7 +38,7 @@ const registerComponents = async (app: App) => {
 }
 
 export default defineClientConfig({
-	enhance: async ({app}) => {
+	enhance: async ({app, router}) => {
 		// Piniaの設定
 		const pinia = createPinia()
 		app.use(pinia)
@@ -48,5 +48,9 @@ export default defineClientConfig({
 			// ブラウザ環境でのみ実行される
 			await registerComponents(app)
 		}
+
+		router.beforeEach(() => {
+			document.exitPointerLock?.()
+		})
 	},
 })

@@ -9,9 +9,14 @@ import {
 import chroma from 'chroma-js'
 import Color from 'colorjs.io'
 import {scalar, vec2} from 'linearly'
-import {computed, ref, shallowRef, useTemplateRef, watch} from 'vue'
+import {computed, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch} from 'vue'
 
-import {GlslCanvas} from '../GlslCanvas'
+import {
+	ColorCanvas,
+	type PadUniforms,
+	type SliderUniforms,
+	type WheelUniforms,
+} from '../ColorCanvas'
 import {Popover} from '../Popover'
 import {useMultiSelectStore} from '../stores/multiSelect'
 import {useThemeStore} from '../stores/theme'
@@ -20,8 +25,6 @@ import {InputEmits} from '../types'
 import {useCopyPaste} from '../use/useCopyPaste'
 import {useDrag} from '../use/useDrag'
 import InputColorPicker from './InputColorPicker.vue'
-import PadFragmentString from './pad.frag'
-import SliderFragmentString from './slider.frag'
 import {
 	type ColorChannel,
 	colorChannelToIndex,
@@ -36,8 +39,6 @@ import {
 	setHSVAChannel,
 	tweakHSVAChannel,
 } from './utils'
-import WheelFragmentString from './wheel.frag'
-
 const model = defineModel<string>({required: true})
 const props = withDefaults(defineProps<InputColorProps>(), {
 	alpha: true,
@@ -213,6 +214,14 @@ whenever(tweaking, () => {
 	open.value = false
 })
 
+onBeforeUnmount(() => {
+	if (tweaking.value) {
+		emit('update:tweaking', false)
+	}
+	open.value = false
+	clearTimeout(wheelTweakingTimeout)
+})
+
 const overlayLabel = computed<[string, string, boolean?][]>(() => {
 	const mode = tweakMode.value
 	if (mode === 'h') {
@@ -281,7 +290,7 @@ const padStyle = computed(() => {
 	}
 })
 
-const padUniforms = computed(() => {
+const padUniforms = computed<PadUniforms>(() => {
 	const {h, s, v, a} = local.value
 	return {
 		hsva: [h, s, v, a],
@@ -289,7 +298,7 @@ const padUniforms = computed(() => {
 	}
 })
 
-const wheelUniforms = computed(() => {
+const wheelUniforms = computed<WheelUniforms>(() => {
 	const {h, s, v, a} = local.value
 	return {
 		hsva: [h, s, v, a],
@@ -331,7 +340,7 @@ const sliderStyle = computed(() => {
 	}
 })
 
-const sliderUniforms = computed(() => {
+const sliderUniforms = computed<SliderUniforms>(() => {
 	const {h, s, v, a} = local.value
 	return {
 		hsva: [h, s, v, a],
@@ -437,20 +446,20 @@ defineOptions({
 					tweakMode === 'v'
 				"
 			>
-				<GlslCanvas
+				<ColorCanvas
 					class="pad"
-					:fragmentString="PadFragmentString"
+					type="pad"
 					:uniforms="padUniforms"
 					:style="padStyle"
 				/>
-				<GlslCanvas
+				<ColorCanvas
 					class="wheel"
-					:fragmentString="WheelFragmentString"
+					type="wheel"
 					:uniforms="wheelUniforms"
 					:style="wheelStyle"
 				/>
 			</template>
-			<GlslCanvas
+			<ColorCanvas
 				v-if="
 					tweakMode === 's' ||
 					tweakMode === 'v' ||
@@ -461,7 +470,7 @@ defineOptions({
 				"
 				class="slider"
 				:class="{[tweakMode]: true}"
-				:fragmentString="SliderFragmentString"
+				type="slider"
 				:uniforms="sliderUniforms"
 				:style="sliderStyle"
 			/>

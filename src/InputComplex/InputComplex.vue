@@ -26,6 +26,11 @@ const entries = computed<[keyof T, Scheme<T>[keyof T]][]>(() => {
 	return Object.entries(props.scheme)
 })
 
+function getBindProps(param: Scheme<T>[keyof T]) {
+	const {type, ui, label, icon, ...bindProps} = param as Record<string, unknown>
+	return bindProps
+}
+
 function getComponentName(param: Scheme<T>[keyof T]) {
 	if (param.type === 'number') {
 		if (param.ui === 'angle') return InputAngle
@@ -91,7 +96,7 @@ function commitConfirm() {
 			<component
 				:is="getComponentName(param)"
 				:modelValue="getModelValue(name)"
-				v-bind="param"
+				v-bind="getBindProps(param)"
 				@update:modelValue="updateModelValue(name, $event)"
 				@focus="emit('focus')"
 				@blur="emit('blur')"

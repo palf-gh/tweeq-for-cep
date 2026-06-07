@@ -9,6 +9,7 @@ import {vec2} from 'linearly'
 import {
 	Component,
 	computed,
+	onBeforeUnmount,
 	reactive,
 	type Ref,
 	toRefs,
@@ -134,6 +135,16 @@ export function useDrag(
 	useEventListener(targetEl, 'pointerup', onPointerUp)
 	useEventListener(targetEl, 'pointercancel', onPointerUp)
 	useEventListener(targetEl, 'pointerleave', onPointerUp)
+
+	onBeforeUnmount(() => {
+		clearTimeout(dragDelayTimer)
+		if (state.pointerLocked) {
+			unlock()
+		}
+		state.pointerLocked = false
+		pointerdown = false
+		state.dragging = false
+	})
 
 	function fireDragStart(event: PointerEvent) {
 		if (
