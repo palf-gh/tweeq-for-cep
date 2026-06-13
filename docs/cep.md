@@ -24,7 +24,7 @@ Pass `cep: false` to `useDrag` to restore browser behaviour when developing docs
 "tweeq": "https://github.com/palf-gh/tweeq-for-cep.git#<commit>"
 ```
 
-Pin a commit hash in production. If the repo is private, configure CI credentials for `git ls-remote`.
+Pin a commit hash in production.
 
 ## Upstream
 
