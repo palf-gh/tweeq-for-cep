@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {Rect} from '@baku89/pave'
 import {scalar} from 'linearly'
-import {computed, useTemplateRef} from 'vue'
+import {computed, useTemplateRef, withDefaults} from 'vue'
 
 import {ColorCanvas, type SliderUniforms} from '../ColorCanvas'
 import {useDrag} from '../use/useDrag'
@@ -17,9 +17,10 @@ import {
 interface Props {
 	modelValue: HSVA
 	axis: ColorChannel
+	vertical?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {vertical: false})
 
 const emit = defineEmits<{
 	'update:modelValue': [HSVA]
@@ -38,22 +39,24 @@ const {
 	xy,
 } = useDrag($root, {
 	dragDelaySeconds: 0,
-	onDragStart({xy: [x], left, right}, event) {
+	onDragStart({xy: [x, y], left, right, top, bottom}, event) {
 		local = props.modelValue
 
 		const isAbsolute = event.target === $root.value
 
 		if (isAbsolute) {
-			const value = scalar.invlerp(left, right, x)
+			const value = props.vertical
+				? scalar.invlerp(bottom, top, y)
+				: scalar.invlerp(left, right, x)
 
 			local = setHSVAChannel(local, props.axis, value)
 			emit('update:modelValue', local)
 		}
 	},
-	onDrag({xy: [x], initial: [ix], width}) {
+	onDrag({xy: [x, y], initial: [ix, iy], width, height}) {
 		let newLocal = {...local}
 
-		const delta = (x - ix) / width
+		const delta = props.vertical ? (iy - y) / height : (x - ix) / width
 
 		newLocal = tweakHSVAChannel(newLocal, props.axis, delta)
 
@@ -76,11 +79,20 @@ const uniforms = computed<SliderUniforms>(() => {
 		hsva: [h, s, v, a],
 		axis: colorChannelToIndex(props.axis),
 		offset: 0,
+		vertical: props.vertical,
 	}
 })
 
 const circleStyle = computed(() => {
 	const t = getHSVAChannel(props.modelValue, props.axis)
+
+	if (props.vertical) {
+		return {
+			bottom: toPercent(t),
+			left: '50%',
+			background: hsva2hex({...props.modelValue, a: 1}),
+		}
+	}
 
 	return {
 		left: toPercent(t),
@@ -93,6 +105,7 @@ const circleStyle = computed(() => {
 	<div
 		ref="$root"
 		class="TqInputColorChannelSlider"
+		:class="{vertical}"
 		:style="{cursor: tweakingInside ? 'none' : undefined}"
 	>
 		<ColorCanvas class="canvas" type="slider" :uniforms="uniforms" />
@@ -111,6 +124,10 @@ const circleStyle = computed(() => {
 	position relative
 	width 100%
 	height calc(0.7 * var(--tq-input-height))
+
+	&.vertical
+		width calc(0.7 * var(--tq-input-height))
+		height 100%
 
 .canvas
 	position absolute

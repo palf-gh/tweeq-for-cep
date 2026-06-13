@@ -275,10 +275,15 @@ const multi = useMultiSelectStore().register({
 useCopyPaste({
 	target: $root,
 	onCopy() {
-		navigator.clipboard.writeText(model.value.toString())
+		void navigator.clipboard.writeText(model.value.toString()).catch(() => {})
 	},
 	onPaste: async () => {
-		const text = await navigator.clipboard.readText()
+		let text: string
+		try {
+			text = await navigator.clipboard.readText()
+		} catch {
+			return
+		}
 		if (!text) return
 
 		const value = parseFloat(text)

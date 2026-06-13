@@ -9,7 +9,14 @@ import {
 import chroma from 'chroma-js'
 import Color from 'colorjs.io'
 import {scalar, vec2} from 'linearly'
-import {computed, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch} from 'vue'
+import {
+	computed,
+	onBeforeUnmount,
+	ref,
+	shallowRef,
+	useTemplateRef,
+	watch,
+} from 'vue'
 
 import {
 	ColorCanvas,
@@ -56,7 +63,7 @@ defineSlots<{
 }>()
 
 const $button = useTemplateRef('$button')
-const open = ref(false)
+const open = ref(props.startOpen ?? false)
 
 const {shift, meta, control, alt, h, f, a, s, v, r, g, b} = useMagicKeys()
 
@@ -97,7 +104,7 @@ const tweakWidth = theme.popupWidth
 let localOnTweak: HSVA | null = null
 
 const {origin, dragging: tweaking} = useDrag($button, {
-	lockPointer: true,
+	lockPointer: false,
 	onClick() {
 		if (multi.multiSelected) return
 		open.value = !open.value
@@ -309,7 +316,7 @@ const wheelStyle = computed(() => {
 	return {
 		...tweakUIOffset.value,
 		opacity: tweakMode.value === 'h' || wheelTweaking.value ? 1 : 0.1,
-		rotate: `${local.value.h * -360}deg`,
+		transform: `rotate(${local.value.h * -360}deg)`,
 	}
 })
 
@@ -381,10 +388,15 @@ whenever(
 useCopyPaste({
 	target: $button,
 	onCopy() {
-		navigator.clipboard.writeText(model.value)
+		void navigator.clipboard.writeText(model.value).catch(() => {})
 	},
 	onPaste: async () => {
-		const text = await navigator.clipboard.readText()
+		let text: string
+		try {
+			text = await navigator.clipboard.readText()
+		} catch {
+			return
+		}
 		if (!text) return
 		model.value = text
 

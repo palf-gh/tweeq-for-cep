@@ -17,6 +17,7 @@ export interface SliderUniforms {
 	hsva: HSVAUniform
 	axis: number
 	offset?: number
+	vertical?: boolean
 }
 
 export interface WheelUniforms {
@@ -32,11 +33,7 @@ export interface KeyedDrawFn {
 	cacheKey: string
 }
 
-function putPixel(
-	data: Uint8ClampedArray,
-	index: number,
-	color: RGBA
-): void {
+function putPixel(data: Uint8ClampedArray, index: number, color: RGBA): void {
 	data[index] = Math.round(clamp01(color.r) * 255)
 	data[index + 1] = Math.round(clamp01(color.g) * 255)
 	data[index + 2] = Math.round(clamp01(color.b) * 255)
@@ -72,7 +69,7 @@ export function buildRenderCacheKey(
 	const {hsva, axis, offset = 0} = slider
 
 	if (axis === 4) {
-		return `slider:h:${offset.toFixed(5)}`
+		return `slider:h:${slider.vertical ? 'v' : 'h'}:${offset.toFixed(5)}`
 	}
 
 	if (axis === 5) {
@@ -141,18 +138,31 @@ export function renderSlider(
 	height: number,
 	hsva: readonly [number, number, number, number],
 	axis: number,
-	offset = 0
+	offset = 0,
+	vertical = false
 ): void {
 	const imageData = ctx.createImageData(width, height)
 	const {data} = imageData
 
-	for (let px = 0; px < width; px++) {
-		const u = width > 1 ? px / (width - 1) : 0
-		const color = computeSliderColor(u + offset, hsva, axis)
-		const base = px * 4
-
+	if (vertical) {
 		for (let py = 0; py < height; py++) {
-			putPixel(data, py * width * 4 + base, color)
+			const u = height > 1 ? 1 - py / (height - 1) : 1
+			const color = computeSliderColor(u + offset, hsva, axis)
+			const row = py * width * 4
+
+			for (let px = 0; px < width; px++) {
+				putPixel(data, row + px * 4, color)
+			}
+		}
+	} else {
+		for (let px = 0; px < width; px++) {
+			const u = width > 1 ? px / (width - 1) : 0
+			const color = computeSliderColor(u + offset, hsva, axis)
+			const base = px * 4
+
+			for (let py = 0; py < height; py++) {
+				putPixel(data, py * width * 4 + base, color)
+			}
 		}
 	}
 
@@ -194,7 +204,8 @@ export function createSliderDraw(uniforms: SliderUniforms): KeyedDrawFn {
 			height,
 			uniforms.hsva,
 			uniforms.axis,
-			uniforms.offset ?? 0
+			uniforms.offset ?? 0,
+			uniforms.vertical ?? false
 		)
 	}
 	draw.cacheKey = buildRenderCacheKey('slider', uniforms)

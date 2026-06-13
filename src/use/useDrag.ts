@@ -17,6 +17,8 @@ import {
 	watchEffect,
 } from 'vue'
 
+import {isCepRuntime} from '../util/cep'
+
 interface DragState {
 	xy: vec2
 	previous: vec2
@@ -49,6 +51,12 @@ interface UseDragOptions {
 	lockPointer?: MaybeRef<boolean>
 
 	/**
+	 * CEP/CEF-friendly pointer tracking (window-level listeners, no pointer lock).
+	 * @default isCepRuntime()
+	 */
+	cep?: boolean
+
+	/**
 	 * Which pointer types can start dragging
 	 * @default ['mouse', 'pen', 'touch']
 	 */
@@ -72,6 +80,7 @@ export function useDrag(
 	{
 		disabled,
 		lockPointer = false,
+		cep = isCepRuntime(),
 		pointerType = ['mouse', 'pen', 'touch'],
 		dragDelaySeconds = 0.5,
 		onClick,
@@ -99,6 +108,9 @@ export function useDrag(
 
 	let dragDelayTimer: ReturnType<typeof setTimeout> | undefined
 	let pointerdown = false
+
+	const cepCapture = {capture: true} as const
+	let cepMoveCleanup: (() => void) | null = null
 
 	const targetEl = computed<HTMLElement | SVGElement | null>(
 		() => unrefElement(target.value) ?? null
@@ -130,13 +142,20 @@ export function useDrag(
 		)
 	})
 
-	useEventListener(targetEl, 'pointerdown', onPointerDown)
-	useEventListener(targetEl, 'pointermove', onPointerMove)
-	useEventListener(targetEl, 'pointerup', onPointerUp)
-	useEventListener(targetEl, 'pointercancel', onPointerUp)
-	useEventListener(targetEl, 'pointerleave', onPointerUp)
+	if (cep) {
+		useEventListener(targetEl, 'pointerdown', onPointerDown, cepCapture)
+	} else {
+		useEventListener(targetEl, 'pointerdown', onPointerDown)
+		useEventListener(targetEl, 'pointermove', onPointerMove)
+		useEventListener(targetEl, 'pointerup', onPointerUp)
+		useEventListener(targetEl, 'pointercancel', onPointerUp)
+		useEventListener(targetEl, 'pointerleave', onPointerUp)
+	}
 
 	onBeforeUnmount(() => {
+		if (cep) {
+			cepAbortDrag()
+		}
 		clearTimeout(dragDelayTimer)
 		if (state.pointerLocked) {
 			unlock()
@@ -146,13 +165,91 @@ export function useDrag(
 		state.dragging = false
 	})
 
+	function cepCoercePointerEvent(event: Event): PointerEvent {
+		if (typeof PointerEvent !== 'undefined' && event instanceof PointerEvent) {
+			return event
+		}
+		const mouse = event as MouseEvent
+		if (typeof PointerEvent === 'undefined') {
+			return mouse as unknown as PointerEvent
+		}
+		return new PointerEvent(mouse.type.replace('mouse', 'pointer'), {
+			bubbles: mouse.bubbles,
+			cancelable: mouse.cancelable,
+			clientX: mouse.clientX,
+			clientY: mouse.clientY,
+			screenX: mouse.screenX,
+			screenY: mouse.screenY,
+			button: mouse.button,
+			buttons: mouse.buttons,
+			ctrlKey: mouse.ctrlKey,
+			shiftKey: mouse.shiftKey,
+			altKey: mouse.altKey,
+			metaKey: mouse.metaKey,
+			pointerId: 1,
+			pointerType: 'mouse',
+			isPrimary: true,
+		})
+	}
+
+	function cepDetachMoveListeners() {
+		cepMoveCleanup?.()
+	}
+
+	function cepAttachMoveListeners() {
+		cepDetachMoveListeners()
+		const onMove = (event: Event) => {
+			if (event.type === 'mousemove' && (event as MouseEvent).buttons === 0) {
+				return
+			}
+			onPointerMove(cepCoercePointerEvent(event))
+		}
+		const onUp = (event: Event) => {
+			onPointerUp(cepCoercePointerEvent(event))
+		}
+		const targets: Array<Window | Document> = []
+		if (typeof window !== 'undefined') targets.push(window)
+		if (typeof document !== 'undefined') targets.push(document)
+		for (const target of targets) {
+			target.addEventListener('pointermove', onMove, cepCapture)
+			target.addEventListener('mousemove', onMove, cepCapture)
+			target.addEventListener('pointerup', onUp, cepCapture)
+			target.addEventListener('mouseup', onUp, cepCapture)
+			target.addEventListener('pointercancel', onUp, cepCapture)
+		}
+		cepMoveCleanup = () => {
+			for (const target of targets) {
+				target.removeEventListener('pointermove', onMove, cepCapture)
+				target.removeEventListener('mousemove', onMove, cepCapture)
+				target.removeEventListener('pointerup', onUp, cepCapture)
+				target.removeEventListener('mouseup', onUp, cepCapture)
+				target.removeEventListener('pointercancel', onUp, cepCapture)
+			}
+			cepMoveCleanup = null
+		}
+	}
+
+	function cepAbortDrag() {
+		if (!pointerdown && !state.dragging) return
+		cepDetachMoveListeners()
+		if (state.dragging) {
+			onDragEnd?.(state, new PointerEvent('pointercancel'))
+		}
+		clearTimeout(dragDelayTimer)
+		pointerdown = false
+		state.dragging = false
+		state.pointerLocked = false
+	}
+
 	function fireDragStart(event: PointerEvent) {
-		if (
+		const shouldLock =
+			!cep &&
 			unref(lockPointer) &&
 			target.value &&
 			targetEl.value &&
 			'requestPointerLock' in targetEl.value
-		) {
+
+		if (shouldLock) {
 			lock(event)
 			state.pointerLocked = true
 		}
@@ -166,9 +263,14 @@ export function useDrag(
 		// Ignore when disabled
 		if (unref(disabled)) return
 		// Ignore non-left click
-		if (event.button !== 0 || !event.isPrimary) return
+		if (event.button !== 0 || (!cep && !event.isPrimary)) return
 		// Ignore non-pointer type
-		if (!pointerType.includes(event.pointerType as PointerType)) return
+		if (
+			event.pointerType &&
+			!pointerType.includes(event.pointerType as PointerType)
+		) {
+			return
+		}
 
 		pointerdown = true
 
@@ -186,13 +288,25 @@ export function useDrag(
 			)
 		}
 
-		;(event.target as Element).setPointerCapture(event.pointerId)
+		if (cep) {
+			cepAttachMoveListeners()
+		}
+
+		try {
+			;(event.target as Element).setPointerCapture(event.pointerId)
+		} catch {
+			// setPointerCapture can throw in CEF
+		}
 	}
 
 	function onPointerMove(event: PointerEvent) {
 		if (!pointerdown) return
 
-		if (event.movementX !== undefined && event.movementY !== undefined) {
+		if (
+			!cep &&
+			event.movementX !== undefined &&
+			event.movementY !== undefined
+		) {
 			// movement properties ignores the zoom level of browser,
 			// so we need to scale it by the zoom
 			const zoomLevel = window.outerWidth / window.innerWidth
@@ -214,7 +328,7 @@ export function useDrag(
 		if (!state.dragging) {
 			// Determine whether dragging has started
 			const d = vec2.dist(state.initial, state.xy)
-			const minDragDistance = event.pointerType === 'mouse' ? 1 : 5
+			const minDragDistance = (event.pointerType || 'mouse') === 'mouse' ? 1 : 5
 			if (d >= minDragDistance) {
 				clearTimeout(dragDelayTimer)
 				fireDragStart(event)
@@ -229,6 +343,10 @@ export function useDrag(
 	}
 
 	function onPointerUp(event: PointerEvent) {
+		if (cep) {
+			cepDetachMoveListeners()
+		}
+
 		if (state.pointerLocked) {
 			unlock()
 		}
@@ -247,7 +365,12 @@ export function useDrag(
 		pointerdown = false
 		state.dragging = false
 		state.xy = state.initial = state.delta = vec2.zero
-		;(event.target as Element).releasePointerCapture(event.pointerId)
+
+		try {
+			;(event.target as Element).releasePointerCapture(event.pointerId)
+		} catch {
+			// releasePointerCapture can throw in CEF
+		}
 	}
 
 	return toRefs(state)

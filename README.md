@@ -10,7 +10,7 @@
 > [!NOTE]
 > For a live demo of [the UIST paper](https://dl.acm.org/doi/10.1145/3746059.3747723), see [this page](https://baku89.github.io/tweeq/uist2025.html).
 
-> **Fork notice:** This is a WebGL-free fork of [baku89/tweeq](https://github.com/baku89/tweeq). Colour picker gradients are rendered with Canvas 2D instead of GLSL/regl. See the `no-webgl` branch.
+> **Fork notice:** This is a [CEP-oriented fork](docs/cep.md) of [baku89/tweeq](https://github.com/baku89/tweeq) for Adobe Creative Cloud panels (After Effects, Premiere, etc.). It replaces WebGL/regl colour rendering with Canvas 2D and includes CEF/Chromium compatibility fixes for drag, popover, clipboard, and CSS limitations.
 
 Tweeq is a collection of [Vue.js](https://vuejs.org) components for design tools. The components range from fundamental UIs such as numeric sliders, color pickers, to advanced and niche controls like a cubic-bezier editor. It supports various micro-interactions suitable for creative professionals.
 

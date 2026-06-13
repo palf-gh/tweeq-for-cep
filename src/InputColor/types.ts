@@ -57,4 +57,5 @@ export interface InputColorProps extends InputBoxProps {
 	alpha?: boolean
 	pickers?: ColorPickerComponent[]
 	presets?: string[]
+	startOpen?: boolean
 }

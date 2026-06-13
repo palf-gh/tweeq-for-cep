@@ -24,6 +24,7 @@ import {InputEmits} from '../types'
 import {useDrag} from '../use/useDrag'
 import {useValidator} from '../use/useValidator'
 import {getNumberPresition, precisionOf, toFixed, toPercent} from '../util'
+import {scrubScaleStyle} from '../util/scrubScaleStyle'
 import * as V from '../validator'
 import InputNumberScales from './InputNumberScales.vue'
 import {type InputNumberProps} from './types'
@@ -447,12 +448,7 @@ const scaleAttrs = (offset: number) => {
 	return {
 		x1: -halfWidth,
 		x2: halfWidth,
-		style: {
-			'--offset-weight': offsetWeight,
-			'--gesture-precision': precision,
-			strokeDashoffset: -dashoffset,
-			opacity,
-		},
+		style: scrubScaleStyle(precision, offsetWeight, dashoffset, opacity),
 	}
 }
 
@@ -632,14 +628,8 @@ const barStyle = computed<StyleValue>(() => {
 	left 50%
 
 	.scale
-		--offset-weight 1
-		--gesture-precision 0
 		fill none
-		stroke 'color-mix(in srgb, var(--tq-color-accent), var(--tq-color-text-subtle) calc(var(--offset-weight) * 100%))' % ()
 		stroke-linecap round
-		stroke-width calc(4px + var(--offset-weight) * -1px)
-		stroke-dasharray 0 calc(pow(10, var(--gesture-precision)))
-		hover-transition(stroke-width)
 
 	.pointer
 		fill var(--tq-color-accent)

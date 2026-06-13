@@ -10,19 +10,25 @@ export function useCopyPaste({
 }: {
 	target: Readonly<ShallowRef<HTMLElement | null>>
 	onCopy?: () => void
-	onPaste?: () => void
+	onPaste?: () => void | Promise<void>
 }) {
 	const {focused} = useFocus(target)
 
 	if (onCopy) {
 		whenever(Meta_C, () => {
-			if (focused.value) onCopy()
+			if (!focused.value) return
+			try {
+				onCopy()
+			} catch {
+				// Clipboard is unavailable in AE CEP.
+			}
 		})
 	}
 
 	if (onPaste) {
 		whenever(Meta_V, () => {
-			if (focused.value) onPaste()
+			if (!focused.value) return
+			void Promise.resolve(onPaste()).catch(() => {})
 		})
 	}
 }
